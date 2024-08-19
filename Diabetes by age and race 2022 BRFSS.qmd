@@ -1,0 +1,123 @@
+---
+title: "BRFSS 2022 - Diabetes by race for working-age population in TX"
+author: "Kaitlan"
+format: html
+editor: visual
+---
+
+Data downloaded from CDC''s BRFSS 2022 public data files: <https://www.cdc.gov/brfss/annual_data/annual_2022.html/>
+
+**Step 1: Load data. Rename column names and filter for Texas.**
+
+```{r}
+# Load the required libraries
+library(haven)
+library(dplyr)
+library(survey)
+
+# Read the XPT file
+data <- read_xpt("LLCP2022.XPT")
+
+# Rename columns for convenience
+data <- data %>%
+  rename(
+    STATE = `_STATE`,
+    STSTR = `_STSTR`,
+    LLCPWT = `_LLCPWT`,
+    BMI5CAT = `_BMI5CAT`,
+    RACE1 = `_RACE1`,
+    AGE65YR = `_AGE65YR`
+  )
+
+# Filter for Texas
+data_tx <- data %>% filter(STATE == 48) # 48 is the FIPS code for Texas
+```
+
+**Step 2: Prep the data by filtering for working-age only and recoding variables.**
+
+```{r}
+
+library(dplyr)
+
+# Mutate the race variable
+working_age <- data_tx %>%
+  
+  filter(AGE65YR == 1) %>% # filter for ages 18-64
+
+ mutate(race_recode = case_when(
+    RACE1 == 1 ~ "White, non-Hispanic",
+    RACE1 == 2 ~ "Black, non-Hispanic",
+    RACE1 == 3 ~ "American Indian, non-Hispanic",
+    RACE1 == 4 ~ "Asian, non-Hispanic",
+    RACE1 == 5 ~ "Native Hawaiian or other Pacific Islander, non-Hispanic",
+    RACE1 == 7 ~ "Multiracial, non-Hispanic",
+    RACE1 == 8 ~ "Hispanic",
+    TRUE ~ NA_character_),
+    
+  obesity = case_when(
+    BMI5CAT == 4 ~ "Obese",
+    BMI5CAT == 3 ~ "Overweight",
+    BMI5CAT == 2 ~ "Normal Weight",
+    BMI5CAT == 1 ~ "Underweight",
+    TRUE ~ NA_character_
+  ),
+  
+  diabetes = case_when(
+    DIABETE4 == 4 ~ "No, pre-diabetes or borderline diabetes",
+    DIABETE4 == 3 ~ "No",
+    DIABETE4 == 2 ~ "Yes, gestational",
+    DIABETE4 == 1 ~ "Yes",
+    TRUE ~ NA_character_
+  ),
+  
+  age = case_when(
+    AGE65YR == 1 ~ "18 to 64",
+    AGE65YR == 2 ~ "65 or older",
+    TRUE ~ NA_character_
+  
+  ))
+
+
+```
+
+**Step 3: Create survey design. STRATA and WEIGHT statements must be added to take into account**
+
+**the sampling design.**
+
+```{r}
+# Create survey design
+
+options(survey.lonely.psu = "adjust")
+library(survey)
+# Create survey design object
+my_design <- svydesign(ids = ~1,
+                       strata = ~STSTR,
+                       weights = ~LLCPWT,
+                       data = working_age)
+```
+
+**Step 4: Create a dataframe with diabetes rates by race within the working-age population.**
+
+```{r}
+
+# Use svytable() to create a table of race by diabetes status
+diabetes_by_race_table <- svytable(~ race_recode + diabetes, design = my_design)
+
+# Convert the table to a data frame for easier viewing and manipulation, if desired
+diabetes_by_race_df <- as.data.frame(diabetes_by_race_table)
+
+# View the table
+print(diabetes_by_race_df)
+
+
+```
+
+**Step 5: Save to Excel.**
+
+```{r}
+
+library(writexl)
+
+write_xlsx(diabetes_by_race_df, path = "Diabetes Rates Working Age by Race 2022.xlsx")
+
+```
